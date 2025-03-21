@@ -1,10 +1,5 @@
 #
-# This is a Shiny web application.
-#
-#
-#
-#
-#
+# This is a Shiny web application for a business-oriented dashboard.
 #
 
 if(!require("shiny")) install.packages("shiny")
@@ -13,14 +8,14 @@ if(!require("dplyr")) install.packages("dplyr")
 #if(!require("ggplot2")) install.packages("ggplot2")
 if(!require("bslib")) install.packages("bslib")
 #if(!require("shinythemes")) install.packages("shinythemes")
+if (!require("shinydashboard")) install.packages("shinydashboard")
 if(!require("highcharter")) install.packages("highcharter")
 if(!require("plotly")) install.packages("plotly")
-#if(!require("leaflet")) install.packages("leaflet")
-#if(!require("DT")) install.packages("DT")
-#if(!require("reactable")) install.packages("reactable")
+if(!require("reactable")) install.packages("reactable")
 if(!require("waiter")) install.packages("waiter")
 if(!require("leaflet")) install.packages("leaflet")
 if(!require("DT")) install.packages("DT")
+if(!require("shinycssloaders")) install.packages("shinycssloaders")
 
 library(shiny)
 library(rio)
@@ -28,18 +23,19 @@ library(dplyr)
 #library(ggplot2)
 library(bslib)
 #library(shinythemes)
+library(shinydashboard)
 library(highcharter)
 library(plotly)
-#library(leaflet)
-#library(DT)
-#library(reactable)
+library(reactable)
 library(waiter)
 library(leaflet)
 library(DT)
+library(shinycssloaders)
 
 # load data
-retail_data1 <- import("datasets/online_retail_II_1.csv")
-retail_data2 <- import("datasets/online_retail_II_2.csv")
+retail_data1 <- import("datasets/online_retail_II_1.csv", stringsAsFactors = FALSE)
+retail_data2 <- import("datasets/online_retail_II_2.csv", stringsAsFactors = FALSE)
+country_data <- import("datasets/countries.csv", stringsAsFactors = FALSE)
 
 retail_data <- retail_data1 %>%
   bind_rows(retail_data2)
@@ -49,155 +45,169 @@ colnames(retail_data) <- gsub(" ", "", colnames(retail_data))
 
 # Data cleaning: removing rows where the CustomerID is missing, and adding a Revenue column
 retail_data <- retail_data %>%
-  filter(!is.na(CustomerID)) %>%
+  filter(!is.na(CustomerID))
+
+# We need to convert the ugly date format into usable one, and convert the Quantity and Price to numeric format
+retail_data <- retail_data %>%
+  mutate(
+    InvoiceDate = as.POSIXct(InvoiceDate, format="%m/%d/%Y %H:%M", tz="UTC"),
+    Quantity = as.numeric(Quantity),
+    Price = as.numeric(Price)
+  )
+
+# We insert a new Revenue column
+retail_data <- retail_data %>%
   mutate(Revenue = Quantity * Price)
 
-View(retail_data)
+#View(retail_data)
 
 # This is for the first selectInput field
 countryList <- retail_data %>% select(Country) %>% unique()
-View(countryList)
+#View(countryList)
 
 stockCodeList <- retail_data %>% select(StockCode) %>% unique()
-View(stockCodeList)
+#View(stockCodeList)
 
 
 # top 3 products per country
 dh <- retail_data %>%
   group_by(Country) %>%
   summarise(Freq = sum(Quantity))
-View(dh)
+#View(dh)
+
+df_total_sales <- retail_data %>%
+  group_by(Country) %>%
+  summarise(Total_sales = sum(Revenue)) %>% left_join(country_data, by = "Country")
+#View(df_total_sales)
 
 df <- slice_max(retail_data, Price, n=3)
-View(df)
+#View(df)
 
 
 
 # *****************************************************  UI  ****************************************************
-ui <- page_fillable(
-  useWaiter(),
-  useHostess(),
-  
-  waiterShowOnLoad(
-    html = tagList(    
-      hostess_loader(
-        "loader", 
-        preset = "fan", 
-        text_color = "#f2f2f2",
-        class = "label-center",
-        center_page = TRUE
-      ),
-      br(),
-      tagAppendAttributes(style = "margin-left:-50px",
-                          p(
-                            sample(
-                              c(
-                                "We're loading the app. Fetching stardust...",
-                                "The app is almost ready. Summoning unicorns...",
-                                "Hold on, the app is being loaded! Chasing rainbows...",
-                                "Loading the app: sending telepathic messages...",
-                                "We're loading the app: teaching squirrels to water ski...",
-                                "App is loading! Counting clouds...",
-                                "We're preparing the app for you, that means: taming wild pixels..."
-                              ),
-                              1)
-                          ))
+ui <- dashboardPage(
+  dashboardHeader(title = "Sales dashboard"),
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Sales over time", tabName = "all_sales_diagram"),
+      menuItem("Top products", tabName = "top_sales_diagram"),
+      menuItem("Sales map", tabName = "sales_map"),
+      menuItem("All sales", tabName = "search_table")
     )
   ),
-  
-  titlePanel("Business-oriented Shiny dashboard application"),
-  layout_columns(
-    # ********************** First card **********************
-    card(
-      height = 550,
-      card_header(""),
-      full_screen = T,
-      plotlyOutput("plotlyplot"),
-      selectInput(
-        inputId = "country",
-        label = "Choose a country",
-        choices = countryList$Country,
-        multiple = FALSE,
-        selectize = TRUE,
-        selected = "Australia"
+  dashboardBody(
+    useWaiter(),
+    useHostess(),
+	  #waiterPreloader(),
+    
+    waiterShowOnLoad(
+      html = tagList(
+        hostess_loader(
+          "loader",
+          preset = "fan",
+          text_color = "#f2f2f2",
+          class = "label-center",
+          center_page = TRUE
+        ),
+        br(),
+        tagAppendAttributes(style = "margin-left:-50px",
+                            p(
+                              sample(
+                                c(
+                                  "We're loading the app. Fetching stardust...",
+                                  "The app is almost ready. Summoning unicorns...",
+                                  "Hold on, the app is being loaded! Chasing rainbows...",
+                                  "Loading the app: sending telepathic messages...",
+                                  "We're loading the app: teaching squirrels to water ski...",
+                                  "App is loading! Counting clouds...",
+                                  "We're preparing the app for you, that means: taming wild pixels..."
+                                ),
+                                1)
+                            ))
       )
     ),
-      
-    # ********************* Second card **********************
+    tabItems(
     
-    card(
-      height = 550,
-      card_header("Highcharter diagram"),
-      full_screen = T,
-      card_body(highchartOutput("highchartPlot")),
-      selectInput(
-        inputId = "country",
-        label = "Choose a country",
-        choices = c(1, 5, 10),
-        multiple = FALSE,
-        selectize = TRUE,
-        selected = 1
+      # ********************** First page **********************
+      tabItem(
+        tabName = "all_sales_diagram", fluidPage(
+          h1("Sales over time"),
+          withSpinner(plotlyOutput("plotlyplot")),
+          selectInput(
+            inputId = "country",
+            label = "Choose a country",
+            choices = sort(unique(countryList$Country)),
+            multiple = FALSE,
+            selectize = TRUE,
+            selected = "USA"
+          )
+        )
+      ),  
+      
+      # ********************* Second page **********************
+      tabItem(
+        tabName = "top_sales_diagram", fluidPage(
+          h1("Top products"),
+          withSpinner(highchartOutput("highchartPlot")),
+          selectInput(
+            inputId = "country",
+            label = "Choose the number of top products",
+            choices = c(1, 5, 10),
+            multiple = FALSE,
+            selectize = TRUE,
+            selected = 1
+          )
+        )
+      ),
+      
+      # ********************** Third page **********************
+      tabItem(
+        tabName = "sales_map", fluidPage(
+          h1("Sales map"),
+          withSpinner(leafletOutput("mymap", height = 500))
+        )
+      ),
+      
+      # ********************** Fourth page **********************
+      tabItem(
+        tabName = "search_table", fluidPage(
+          h1("All sales"),
+          withSpinner(DTOutput("dttable")),
+          selectInput("filter_country", "Please choose a country:", choices = NULL, multiple = FALSE)
+        )
       )
-    ),
-    
-    
-    # ********************** Third card **********************
-    card(
-      card_header("Leaflet map"),
-      full_screen = T,
-      leafletOutput("mymap", height = 500)
-      
-    ),
-    
-    
-    # ********************** Third card **********************
-    card(
-      card_header("Data table"),
-      full_screen = T,
-      DTOutput("dttable")
-      
-    ),
-    
-    col_widths = c(6, 6, 6, 6)
+    )
+   
+     
     
   )
 )
 
+print(class(ui))
 
 
 # ************************************************* SERVER LOGIC ************************************************
 # Define server logic required to draw a histogram
 server <- function(input, output) {
+  Sys.sleep(5)
   hostess <- Hostess$new("loader")
   
-
-  
- # countryList <- retail_data %>% select(Country) %>% unique()
-
-    
-  #browser()
-  
-  
-  # x <- c(1:100)
-  # random_y <- rnorm(100, mean = 0)
-  # data <- data.frame(x, random_y)
-  # 
-  # fig <- plot_ly(data, x = ~x, y = ~random_y, type = 'scatter', mode = 'lines')
-  # 
-  # fig
 
 
   hostess$set(20) 
   # Reactive filtered data
   filtered_by_country <- eventReactive(input$country, {
     retail_data %>% filter(Country == input$country)
-    #browser()
   })
   
   hostess$set(30)
   output$plotlyplot <- renderPlotly({
-    #browser()
-    plot_ly(filtered_by_country(), x = ~InvoiceDate, y = ~Revenue) %>%
+    plot_ly(
+      filtered_by_country(),
+      x = ~InvoiceDate,
+      y = ~Revenue
+    ) %>%
       add_lines()
   })
   
@@ -228,16 +238,16 @@ server <- function(input, output) {
   
   hostess$set(70)
   output$mymap <- renderLeaflet({
-    leaflet() %>%
-      addTiles() %>%  # Add default OpenStreetMap tiles
-      addMarkers(lng=174.768, lat=-36.852, popup="The birthplace of R") %>%
-      setView(lng = 174.768, lat = -36.852, zoom = 12)  # Set view (New York)
+    leaflet(df_total_sales) %>%
+      addTiles() %>%
+      addMarkers(~Lon, ~Lat, popup =  ~paste0(Country, "<br/> Total sales: $", round(Total_sales, 0)), ) %>%
+      setView(lng = 10.451526, lat = 51.165691, zoom = 3)
   })
   
   
   hostess$set(80)
   output$dttable <- renderDT({
-    datatable(iris)  # Display the iris dataset
+    datatable(retail_data)
   })
   
   
